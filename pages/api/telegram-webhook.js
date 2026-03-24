@@ -1,64 +1,72 @@
 import axios from 'axios';
 import { db } from '../../firebase';
-import { collection, addDoc, query, where, getDocs, serverTimestamp, setDoc, doc } from 'firebase/firestore';
+import { collection, addDoc, query, where, getDocs, serverTimestamp, setDoc, doc, limit } from 'firebase/firestore';
 
 const TELEGRAM_TOKEN = '8542020705:AAHqad2Nj8ARKPTSTaMYoRJd6H1wLGQyd6U';
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
 
 export default async function handler(req, res) {
+  // SEGERA BERI RESPON KE TELEGRAM AGAR TIDAK RETRY (SPAM)
   if (req.method !== 'POST') return res.status(405).send('Method Not Allowed');
 
+  const { message } = req.body;
+  if (!message || !message.text) return res.status(200).send('OK');
+
+  const chatId = message.chat.id;
+  const text = message.text;
+
   try {
-    const { message } = req.body;
-    if (!message || !message.text) return res.status(200).send('OK');
-
-    const chatId = message.chat.id;
-    const text = message.text;
-
-    // --- 1. LOGIC LOGIN (Harus di cek paling pertama) ---
+    // --- 1. LOGIKA LOGIN (/login email | PIN) ---
     if (text.startsWith('/login')) {
       const parts = text.replace('/login', '').split('|');
       if (parts.length === 2) {
         const email = parts[0].trim().toLowerCase();
         const pinInput = parts[1].trim();
 
-        const q = query(collection(db, 'users'), where('email', '==', email));
+        // Cari user di koleksi 'users'
+        const q = query(collection(db, 'users'), where('email', '==', email), limit(1));
         const userSnap = await getDocs(q);
 
         if (!userSnap.empty) {
           const userData = userSnap.docs[0].data();
           if (userData.telegramPin === pinInput) {
-            // Simpan mapping menggunakan setDoc agar ChatID jadi ID Dokumen (Unik)
+            // SIMPAN MAPPING KE KOLEKSI 'user_mappings'
+            // Gunakan chatId sebagai ID Dokumen agar pencarian sangat cepat
             await setDoc(doc(db, 'user_mappings', String(chatId)), {
-              chatId, 
-              uid: userSnap.docs[0].id, 
-              email, 
+              chatId: chatId,
+              uid: userSnap.docs[0].id,
+              email: email,
               linkedAt: serverTimestamp()
             });
-            return sendBot(chatId, `✅ *Login Berhasil!*\nSelamat datang *${userData.name || email}*.\nSekarang silakan gunakan perintah /cat atau /t.`);
+            await sendBot(chatId, `✅ *LOGIN BERHASIL!*\nSelamat datang, *${userData.name || email}*.\nSekarang Anda bisa input data.`);
+            return res.status(200).send('OK');
           }
-          return sendBot(chatId, `❌ *PIN Salah!* Silakan cek PIN di menu Profile web.`);
+          await sendBot(chatId, `❌ *PIN SALAH!* Silakan cek PIN di menu Profile web.`);
+          return res.status(200).send('OK');
         }
-        return sendBot(chatId, `❌ *Email tidak ditemukan!* Pastikan email sudah terdaftar di web.`);
+        await sendBot(chatId, `❌ *EMAIL TIDAK DITEMUKAN!*`);
+        return res.status(200).send('OK');
       }
-      return sendBot(chatId, `Format salah. Gunakan: \`/login email | PIN\``);
+      await sendBot(chatId, `Format: \`/login email | PIN\``);
+      return res.status(200).send('OK');
     }
 
-    // --- 2. VALIDASI APAKAH SUDAH TERHUBUNG? ---
-    // Kita cari apakah ChatID ini sudah ada di koleksi user_mappings
-    const mappingDoc = await getDocs(query(collection(db, 'user_mappings'), where('chatId', '==', chatId)));
+    // --- 2. CEK STATUS LOGIN (MAPPING) ---
+    // Mencari dokumen dengan ID yang sama dengan chatId (Lebih cepat daripada query where)
+    const mapRef = doc(db, 'user_mappings', String(chatId));
+    const mapSnap = await getDocs(query(collection(db, 'user_mappings'), where('chatId', '==', chatId), limit(1)));
     
-    if (mappingDoc.empty) {
-      return sendBot(chatId, `⚠️ *Akses Ditolak.*\nAnda belum login. Silakan ketik:\n\`/login email@mgmglove.com | PIN\``);
+    if (mapSnap.empty) {
+      await sendBot(chatId, `⚠️ *AKSES DITOLAK.*\nSilakan login terlebih dahulu:\n\`/login email@mgmglove.com | PIN\``);
+      return res.status(200).send('OK');
     }
 
-    // Jika sudah ada, ambil datanya
-    const userAuth = mappingDoc.docs[0].data();
+    const userAuth = mapSnap.docs[0].data();
     const DYNAMIC_UID = userAuth.uid;
 
-    // --- 3. LOGIC INPUT DATA (Hanya jalan jika sudah login) ---
+    // --- 3. PROSES PERINTAH (Hanya jika sudah login) ---
 
-    // INPUT KATEGORI
+    // KATEGORI: /cat Nama | Tipe
     if (text.startsWith('/cat')) {
       const parts = text.replace('/cat', '').split('|');
       if (parts.length === 2) {
@@ -68,17 +76,18 @@ export default async function handler(req, res) {
           uid: DYNAMIC_UID,
           createdAt: serverTimestamp()
         });
-        return sendBot(chatId, `✅ Kategori *${parts[0].trim()}* (${parts[1].trim()}) berhasil masuk ke akun *${userAuth.email}*!`);
+        await sendBot(chatId, `✅ Kategori *${parts[0].trim()}* berhasil disimpan.`);
+      } else {
+        await sendBot(chatId, `Gunakan format: \`/cat Nama | Tipe\``);
       }
-      return sendBot(chatId, "Format salah. Gunakan: `/cat Nama | Tipe` ");
     }
 
-    // INPUT TRANSAKSI
+    // TRANSAKSI: /t Nominal | Ket | Kategori | Tipe
     else if (text.startsWith('/t')) {
       const parts = text.replace('/t', '').split('|');
       if (parts.length === 4) {
         await addDoc(collection(db, 'transactions'), {
-          amount: parseInt(parts[0].trim()),
+          amount: Number(parts[0].trim()),
           description: parts[1].trim(),
           category: parts[2].trim(),
           type: parts[3].trim(),
@@ -86,34 +95,39 @@ export default async function handler(req, res) {
           date: new Date().toISOString(),
           createdAt: serverTimestamp()
         });
-        return sendBot(chatId, `✅ Transaksi Rp${parseInt(parts[0]).toLocaleString()} berhasil dicatat!`);
+        await sendBot(chatId, `✅ Transaksi Rp${Number(parts[0]).toLocaleString()} tercatat.`);
+      } else {
+        await sendBot(chatId, `Gunakan format: \`/t Nominal | Ket | Kat | Tipe\``);
       }
-      return sendBot(chatId, "Format salah. Gunakan: `/t Nominal | Ket | Kategori | Tipe` ");
     }
 
-    // INPUT BUDGET
+    // BUDGET: /b Nominal | Kategori
     else if (text.startsWith('/b')) {
       const parts = text.replace('/b', '').split('|');
       if (parts.length === 2) {
         await addDoc(collection(db, 'budgets'), {
-          limit: parseInt(parts[0].trim()),
+          limit: Number(parts[0].trim()),
           category: parts[1].trim(),
           uid: DYNAMIC_UID,
           month: new Date().getMonth() + 1,
           year: new Date().getFullYear(),
           createdAt: serverTimestamp()
         });
-        return sendBot(chatId, `✅ Budget *${parts[1].trim()}* diatur ke Rp${parseInt(parts[0]).toLocaleString()}!`);
+        await sendBot(chatId, `✅ Budget *${parts[1].trim()}* diperbarui.`);
       }
     }
 
+    // AKHIR DARI PROSES
     return res.status(200).send('OK');
-  } catch (e) {
-    console.error("Error Webhook:", e);
-    return res.status(200).send('Error');
+
+  } catch (error) {
+    console.error("Webhook Error:", error);
+    // Tetap kirim 200 OK ke Telegram agar tidak terjadi loop kirim ulang
+    return res.status(200).send('OK');
   }
 }
 
+// Helper untuk kirim pesan ke bot
 async function sendBot(chatId, text) {
   try {
     await axios.post(`${TELEGRAM_API}/sendMessage`, {
@@ -121,7 +135,7 @@ async function sendBot(chatId, text) {
       text: text,
       parse_mode: 'Markdown'
     });
-  } catch (error) {
-    console.error("Error Send Telegram:", error);
+  } catch (err) {
+    console.error("Telegram Send Error:", err.message);
   }
 }
