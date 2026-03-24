@@ -43,12 +43,6 @@ export default function Layout({ children, user }) {
                 <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Financial System</p>
               </div>
               {/* Tombol pemicu sidebar di mobile (Jika tidak ingin pakai floating button) */}
-              <button 
-                onClick={() => setIsMobileOpen(true)}
-                className="p-2 bg-white rounded-xl shadow-sm border border-slate-100 text-slate-600"
-              >
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
-              </button>
             </div>
           )}
 
