@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
-import { db } from '../firebase';
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { useState, useEffect, cloneElement } from 'react'; // Tambahkan cloneElement di sini
+import { db, auth } from '../firebase'; // Import auth dari firebase.js
+import { collection, onSnapshot, query, orderBy, where } from 'firebase/firestore'; // Tambahkan where
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   PieChart, Pie, Cell, BarChart, Bar, Legend 
@@ -9,7 +9,7 @@ import {
   Wallet, ArrowUpCircle, ArrowDownCircle, Target, 
   TrendingUp, Calendar, Filter, ChevronDown 
 } from 'lucide-react';
-import dayjs from 'dayjs'; // Gunakan dayjs untuk manipulasi tanggal yang mudah
+import dayjs from 'dayjs';
 
 export default function Dashboard() {
   const [transactions, setTransactions] = useState([]);
@@ -25,17 +25,42 @@ export default function Dashboard() {
   const COLORS = ['#0d9488', '#0ea5e9', '#6366f1', '#f59e0b', '#ef4444', '#8b5cf6'];
 
   useEffect(() => {
-    const unsubTrans = onSnapshot(query(collection(db, "transactions"), orderBy("createdAt", "asc")), (snap) => {
-      setTransactions(snap.docs.map(d => d.data()));
+    // 1. Pantau status login user terlebih dahulu
+    const unsubscribeAuth = auth.onAuthStateChanged((user) => {
+      if (user) {
+        // 2. Query Transaksi: Hanya milik UID user yang login
+        const qTrans = query(
+          collection(db, "transactions"), 
+          where("uid", "==", user.uid), // Filter UID
+          orderBy("createdAt", "asc")
+        );
+
+        const unsubTrans = onSnapshot(qTrans, (snap) => {
+          setTransactions(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        });
+
+        // 3. Query Budgets: Hanya milik UID user yang login
+        const qBudgets = query(
+          collection(db, "budgets"),
+          where("uid", "==", user.uid) // Filter UID
+        );
+
+        const unsubBudgets = onSnapshot(qBudgets, (snap) => {
+          setBudgets(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        });
+
+        setLoading(false);
+        // Clean up listeners saat unmount
+        return () => { unsubTrans(); unsubBudgets(); };
+      } else {
+        setLoading(false);
+      }
     });
-    const unsubBudgets = onSnapshot(collection(db, "budgets"), (snap) => {
-      setBudgets(snap.docs.map(d => d.data()));
-    });
-    setLoading(false);
-    return () => { unsubTrans(); unsubBudgets(); };
+
+    return () => unsubscribeAuth();
   }, []);
 
-  // 1. Logika Filter Data berdasarkan Tanggal
+  // 1. Logika Filter Data berdasarkan Tanggal (Client-side filter tetap ada untuk input date)
   const filteredData = transactions.filter(t => {
     const d = dayjs(t.createdAt);
     return d.isAfter(dayjs(startDate).subtract(1, 'day')) && d.isBefore(dayjs(endDate).add(1, 'day'));
@@ -77,14 +102,19 @@ export default function Dashboard() {
       .slice(0, pieLimit);
   };
 
-  if (loading) return <div className="p-10 text-center font-black text-slate-400 animate-pulse">GENERATING DASHBOARD...</div>;
+  if (loading) return (
+    <div className="h-screen bg-white flex flex-col items-center justify-center gap-4">
+      <div className="w-10 h-10 border-4 border-teal-600 border-t-transparent rounded-full animate-spin"></div>
+      <p className="font-black text-slate-400 tracking-widest text-xs">GENERATING DASHBOARD...</p>
+    </div>
+  );
 
   return (
-    <div className="p-8 space-y-10">
+    <div className="p-8 space-y-10 font-sans">
       {/* HEADER & GLOBAL FILTER */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-          <h2 className="text-4xl font-black text-slate-800 tracking-tighter">MGM Dashboard</h2>
+          <h2 className="text-4xl font-black text-slate-800 tracking-tighter">My Dashboard</h2>
           <p className="text-slate-400 font-bold text-sm">Financial Systems & Monitoring</p>
         </div>
         
@@ -95,7 +125,7 @@ export default function Dashboard() {
             <span className="text-slate-300">-</span>
             <input type="date" className="text-xs font-black border-none focus:ring-0 outline-none" value={endDate} onChange={e => setEndDate(e.target.value)} />
           </div>
-          <select className="text-xs font-black border-none focus:ring-0 outline-none px-4 cursor-pointer" value={timeUnit} onChange={e => setTimeUnit(e.target.value)}>
+          <select className="text-xs font-black border-none focus:ring-0 outline-none px-4 cursor-pointer bg-transparent" value={timeUnit} onChange={e => setTimeUnit(e.target.value)}>
             <option value="day">Harian</option>
             <option value="week">Mingguan</option>
             <option value="month">Bulanan</option>
@@ -113,7 +143,7 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* GRAFIK UTAMA: CASHFLOW & SALDO */}
+        {/* GRAFIK UTAMA */}
         <div className="lg:col-span-2 bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100">
           <h3 className="text-xl font-black text-slate-800 mb-6">Cashflow vs Saldo</h3>
           <div className="h-[350px]">
@@ -138,11 +168,11 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* PIE CHART: PROPORSI PENGELUARAN */}
+        {/* PIE CHART */}
         <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100">
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-xl font-black text-slate-800">Top Pengeluaran</h3>
-            <select className="text-[10px] font-black bg-slate-50 border-none rounded-lg px-2" value={pieLimit} onChange={e => setPieLimit(Number(e.target.value))}>
+            <select className="text-[10px] font-black bg-slate-50 border-none rounded-lg px-2 outline-none" value={pieLimit} onChange={e => setPieLimit(Number(e.target.value))}>
               <option value={3}>TOP 3</option>
               <option value={5}>TOP 5</option>
               <option value={10}>TOP 10</option>
@@ -165,9 +195,9 @@ export default function Dashboard() {
               <div key={idx} className="flex justify-between items-center text-xs font-bold">
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full" style={{backgroundColor: COLORS[idx % COLORS.length]}}></div>
-                  <span className="text-slate-500 uppercase">{item.name}</span>
+                  <span className="text-slate-500 uppercase tracking-tighter">{item.name}</span>
                 </div>
-                <span className="text-slate-800">Rp {item.value.toLocaleString()}</span>
+                <span className="text-slate-800 font-black">Rp {item.value.toLocaleString()}</span>
               </div>
             ))}
           </div>
@@ -177,7 +207,6 @@ export default function Dashboard() {
   );
 }
 
-// Komponen Card Kecil
 function ScoreCard({ title, value, icon, color, isMoney, isPercent }) {
   return (
     <div className={`${color} p-6 rounded-[2rem] text-white shadow-lg relative overflow-hidden group`}>
@@ -191,4 +220,3 @@ function ScoreCard({ title, value, icon, color, isMoney, isPercent }) {
     </div>
   );
 }
-import { cloneElement } from 'react';
