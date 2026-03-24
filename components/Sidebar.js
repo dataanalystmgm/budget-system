@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { 
-  LayoutDashboard, Wallet, LogOut, Tag, 
+  LayoutDashboard, Wallet, LogOut, Tag, User,
   FileText, BarChart, ReceiptText, ChevronLeft, ChevronRight, Menu, X 
 } from 'lucide-react';
 import { auth } from '../firebase';
@@ -32,6 +32,7 @@ export default function Sidebar({ isMinimized, setIsMinimized }) {
     { name: 'Detail', icon: <ReceiptText size={20}/>, path: '/detail-transaksi' },
     { name: 'Budget', icon: <Wallet size={20}/>, path: '/atur-budget' },
     { name: 'Monitor', icon: <BarChart size={20}/>, path: '/monitor-budget' },
+    { name: 'Profile', icon: <User size={20}/>, path: '/profile' }, // MENU PROFILE BARU
   ];
 
   return (
@@ -79,7 +80,7 @@ export default function Sidebar({ isMinimized, setIsMinimized }) {
 
         {/* Header Logo */}
         <div className={`p-6 text-xl font-bold text-teal-400 border-b border-slate-800 overflow-hidden whitespace-nowrap ${isMinimized ? 'text-center' : ''}`}>
-          {isMinimized ? 'M' : 'My Finance'}
+          {isMinimized ? 'M' : 'MGM Finance'}
         </div>
 
         {/* Profil Singkat */}
