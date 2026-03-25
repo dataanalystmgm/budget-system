@@ -110,28 +110,58 @@ export default async function handler(req, res) {
       }
     }
 
+// --- LOGIKA BUDGET: /b Nominal | NamaGroup | Kategori | StartDate | EndDate ---
+// Contoh: /b 200000 | Makan | Test | 25032026 | 01042026
 else if (text.startsWith('/b')) {
   const parts = text.replace('/b', '').split('|');
-  if (parts.length === 3) {
+  
+  if (parts.length === 5) {
     const amount = Number(parts[0].trim());
     const groupName = parts[1].trim();
     const category = parts[2].trim();
+    const rawStart = parts[3].trim(); // ddmmyyyy
+    const rawEnd = parts[4].trim();   // ddmmyyyy
 
-    await addDoc(collection(db, 'budgets'), {
-      amount: amount,                 // Sesuai gambar (bukan limit)
-      groupName: groupName,           // Sesuai gambar
-      category: category,             // Sesuai gambar
-      status: "active",               // Sesuai gambar
-      uid: DYNAMIC_UID,
-      startDate: dayjs().format('YYYY-MM-DD'),
-      endDate: dayjs().add(1, 'month').startOf('month').format('YYYY-MM-DD'),
-      createdAt: new Date().toISOString()
-    });
+    // Konversi format ddmmyyyy ke YYYY-MM-DD menggunakan dayjs
+    // Format "DDMMYYYY" artinya: 25032026 -> 2026-03-25
+    const startDate = dayjs(rawStart, 'DDMMYYYY').format('YYYY-MM-DD');
+    const endDate = dayjs(rawEnd, 'DDMMYYYY').format('YYYY-MM-DD');
 
-    await sendBot(chatId, `✅ Budget *${groupName}* (Cat: ${category}) sebesar *Rp${amount.toLocaleString()}* berhasil diaktifkan!`);
+    // Validasi apakah tanggal valid
+    if (startDate === 'Invalid Date' || endDate === 'Invalid Date') {
+      await sendBot(chatId, `❌ *Format Tanggal Salah!*\nGunakan DDMMYYYY (Contoh: 25032026).`);
+      return res.status(200).send('OK');
+    }
+
+    try {
+      await addDoc(collection(db, 'budgets'), {
+        amount: amount,
+        groupName: groupName,
+        category: category,
+        startDate: startDate, // Ter simpan sebagai "2026-03-25"
+        endDate: endDate,     // Ter simpan sebagai "2026-04-01"
+        status: "active",
+        uid: DYNAMIC_UID,
+        createdAt: new Date().toISOString()
+      });
+
+      await sendBot(chatId, [
+        `✅ *Budget Berhasil Diaktifkan!*`,
+        `━━━━━━━━━━━━━━━━━━`,
+        `📦 *Grup:* ${groupName}`,
+        `💰 *Nominal:* Rp ${amount.toLocaleString()}`,
+        `📅 *Periode:* ${dayjs(startDate).format('DD MMM')} - ${dayjs(endDate).format('DD MMM YYYY')}`,
+        `━━━━━━━━━━━━━━━━━━`
+      ].join('\n'));
+      
+    } catch (error) {
+      console.error("Budget Error:", error);
+      await sendBot(chatId, "❌ Gagal menyimpan data budget.");
+    }
+    
     return res.status(200).send('OK');
   } else {
-    await sendBot(chatId, `❌ Format salah!\nGunakan: \`/b Nominal | NamaGroup | Kategori\``);
+    await sendBot(chatId, `❌ *Format Salah!*\nGunakan: \`/b Nominal | NamaGroup | Kategori | StartDate | EndDate\`\n\nContoh: \`/b 200000 | Makan | Test | 25032026 | 01042026\``);
   }
 }
 
