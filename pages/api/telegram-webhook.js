@@ -72,9 +72,9 @@ export default async function handler(req, res) {
       if (parts.length === 2) {
         await addDoc(collection(db, 'categories'), {
           name: parts[0].trim(),
-          type: parts[1].trim(),
+          tipe: parts[1].trim(),
           uid: DYNAMIC_UID,
-          createdAt: new Date().toISOString()
+          createdAt: serverTimestamp()
         });
         await sendBot(chatId, `✅ Kategori *${parts[0].trim()}* berhasil disimpan.`);
       } else {
@@ -90,7 +90,7 @@ export default async function handler(req, res) {
           amount: Number(parts[0].trim()),
           description: parts[1].trim(),
           category: parts[2].trim(),
-          type: parts[3].trim(),
+          tipe: parts[3].trim(),
           uid: DYNAMIC_UID,
           date: new Date().toISOString(),
           createdAt: serverTimestamp()
