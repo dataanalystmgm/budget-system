@@ -1,6 +1,11 @@
 import axios from 'axios';
 import { db } from '../../firebase';
 import { collection, addDoc, query, where, getDocs, serverTimestamp, setDoc, doc, limit } from 'firebase/firestore';
+import dayjs from 'dayjs';
+import customParseFormat from 'dayjs/plugin/customParseFormat';
+
+// 2. AKTIFKAN PLUGIN
+dayjs.extend(customParseFormat);
 
 const TELEGRAM_TOKEN = '8542020705:AAHqad2Nj8ARKPTSTaMYoRJd6H1wLGQyd6U';
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
