@@ -3,6 +3,10 @@ import { db } from '../../firebase';
 import { collection, addDoc, query, where, getDocs, serverTimestamp, setDoc, doc, limit } from 'firebase/firestore';
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
+import { 
+  collection, addDoc, query, where, getDocs, setDoc, doc, limit, 
+  deleteDoc // <--- Tambahkan deleteDoc di import firestore Anda
+} from 'firebase/firestore';
 
 // 2. AKTIFKAN PLUGIN
 dayjs.extend(customParseFormat);
@@ -112,6 +116,22 @@ export default async function handler(req, res) {
         return res.status(200).send('OK');
       } else {
         await sendBot(chatId, `❌ Format salah!\nGunakan: \`/t Nominal | Keterangan | Kategori | Tipe\``);
+      }
+    }
+
+    else if (text === '/logout') {
+      try {
+        // Cari apakah ada mapping untuk chatId ini
+        const mapRef = doc(db, 'user_mappings', String(chatId));
+        
+        // Hapus dokumen mapping
+        await deleteDoc(mapRef);
+
+        await sendBot(chatId, `✅ *LOGOUT BERHASIL!*\nSesi Anda telah dihentikan. Untuk menggunakan bot lagi, silakan login kembali dengan:\n\n\`/login email | PIN\``);
+        return res.status(200).send('OK');
+      } catch (error) {
+        console.error("Logout Error:", error);
+        await sendBot(chatId, "❌ Gagal melakukan logout.");
       }
     }
 
