@@ -62,7 +62,7 @@ export default async function handler(req, res) {
     const mapSnap = await getDocs(query(collection(db, 'user_mappings'), where('chatId', '==', chatId), limit(1)));
     
     if (mapSnap.empty) {
-      await sendBot(chatId, `⚠️ *AKSES DITOLAK.*\nSilakan login terlebih dahulu:\n\`/login email@mgmglove.com | PIN\``);
+      await sendBot(chatId, `⚠️ *AKSES DITOLAK.*\nSilakan login terlebih dahulu:\n\`/login email@gmail.com | PIN\``);
       return res.status(200).send('OK');
     }
 
