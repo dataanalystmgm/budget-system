@@ -85,38 +85,101 @@ export default async function handler(req, res) {
     // TRANSAKSI: /t Nominal | Ket | Kategori | Tipe
     else if (text.startsWith('/t')) {
       const parts = text.replace('/t', '').split('|');
+      
       if (parts.length === 4) {
+        const nominal = Number(parts[0].trim());
+        const keterangan = parts[1].trim();
+        const kategori = parts[2].trim();
+        const tipe = parts[3].trim().toLowerCase(); // Paksa huruf kecil: pengeluaran/pemasukan
+
         await addDoc(collection(db, 'transactions'), {
-          amount: Number(parts[0].trim()),
-          description: parts[1].trim(),
-          category: parts[2].trim(),
-          tipe: parts[3].trim(),
-          uid: DYNAMIC_UID,
-          date: new Date().toISOString(),
-          createdAt: serverTimestamp()
+          nominal: nominal,            // Sesuai gambar (bukan amount)
+          keterangan: keterangan,      // Sesuai gambar (bukan description)
+          kategori: kategori,          // Sesuai gambar (bukan category)
+          tipe: tipe,                  // Sesuai gambar
+          uid: DYNAMIC_UID,            // UID dari user_mappings
+          userEmail: userAuth.email,   // Sesuai gambar (menambah userEmail)
+          imageUrl: "",                // Sesuai gambar (field kosong)
+          createdAt: new Date().toISOString() // Sesuai gambar (format ISO dengan "Z")
         });
-        await sendBot(chatId, `✅ Transaksi Rp${Number(parts[0]).toLocaleString()} tercatat.`);
+
+        await sendBot(chatId, `✅ Transaksi *${keterangan}* sebesar *Rp${nominal.toLocaleString()}* berhasil dicatat ke kategori *${kategori}*.`);
+        return res.status(200).send('OK');
       } else {
-        await sendBot(chatId, `Gunakan format: \`/t Nominal | Ket | Kat | Tipe\``);
+        await sendBot(chatId, `❌ Format salah!\nGunakan: \`/t Nominal | Keterangan | Kategori | Tipe\``);
       }
     }
 
-    // BUDGET: /b Nominal | Kategori
-    else if (text.startsWith('/b')) {
-      const parts = text.replace('/b', '').split('|');
-      if (parts.length === 2) {
-        await addDoc(collection(db, 'budgets'), {
-          limit: Number(parts[0].trim()),
-          category: parts[1].trim(),
-          uid: DYNAMIC_UID,
-          month: new Date().getMonth() + 1,
-          year: new Date().getFullYear(),
-          createdAt: serverTimestamp()
-        });
-        await sendBot(chatId, `✅ Budget *${parts[1].trim()}* diperbarui.`);
+else if (text.startsWith('/b')) {
+  const parts = text.replace('/b', '').split('|');
+  if (parts.length === 3) {
+    const amount = Number(parts[0].trim());
+    const groupName = parts[1].trim();
+    const category = parts[2].trim();
+
+    await addDoc(collection(db, 'budgets'), {
+      amount: amount,                 // Sesuai gambar (bukan limit)
+      groupName: groupName,           // Sesuai gambar
+      category: category,             // Sesuai gambar
+      status: "active",               // Sesuai gambar
+      uid: DYNAMIC_UID,
+      startDate: dayjs().format('YYYY-MM-DD'),
+      endDate: dayjs().add(1, 'month').startOf('month').format('YYYY-MM-DD'),
+      createdAt: new Date().toISOString()
+    });
+
+    await sendBot(chatId, `✅ Budget *${groupName}* (Cat: ${category}) sebesar *Rp${amount.toLocaleString()}* berhasil diaktifkan!`);
+    return res.status(200).send('OK');
+  } else {
+    await sendBot(chatId, `❌ Format salah!\nGunakan: \`/b Nominal | NamaGroup | Kategori\``);
+  }
+}
+
+// --- 2. LOGIKA CEK SALDO & SUMMARY: /cek ---
+    else if (text === '/cek') {
+      try {
+        // Ambil data Transaksi & Budget milik user ini
+        const qTrans = query(collection(db, "transactions"), where("uid", "==", DYNAMIC_UID));
+        const qBudgets = query(collection(db, "budgets"), where("uid", "==", DYNAMIC_UID));
+        
+        const [transSnap, budgetSnap] = await Promise.all([getDocs(qTrans), getDocs(qBudgets)]);
+        
+        const transactions = transSnap.docs.map(d => d.data());
+        const budgets = budgetSnap.docs.map(d => d.data());
+
+        // Filter bulan ini (mengikuti logika index.js)
+        const startOfMonth = dayjs().startOf('month');
+        const filteredTrans = transactions.filter(t => dayjs(t.createdAt).isAfter(startOfMonth.subtract(1, 'day')));
+
+        // Hitung Score Cards (Logika dari Dashboard)
+        const totalIn = filteredTrans.filter(t => t.tipe === 'pemasukan').reduce((a, b) => a + (b.nominal || 0), 0);
+        const totalOut = filteredTrans.filter(t => t.tipe === 'pengeluaran').reduce((a, b) => a + (b.nominal || 0), 0);
+        const currentBalance = totalIn - totalOut;
+        
+        const totalBudgetSetup = budgets.filter(b => b.status === 'active').reduce((a, b) => a + (b.amount || 0), 0);
+        const budgetVsActualPercent = totalBudgetSetup > 0 ? (totalOut / totalBudgetSetup) * 100 : 0;
+
+        // Susun Pesan
+        const message = [
+          `📊 *FINANCIAL SUMMARY (Bulan Ini)*`,
+          `━━━━━━━━━━━━━━━━━━`,
+          `💰 *Saldo Saat Ini:* Rp ${currentBalance.toLocaleString()}`,
+          `📈 *Total Pemasukan:* Rp ${totalIn.toLocaleString()}`,
+          `📉 *Total Pengeluaran:* Rp ${totalOut.toLocaleString()}`,
+          `━━━━━━━━━━━━━━━━━━`,
+          `🎯 *Budget Setup:* Rp ${totalBudgetSetup.toLocaleString()}`,
+          `🔥 *Realisasi:* ${budgetVsActualPercent.toFixed(1)}%`,
+          `━━━━━━━━━━━━━━━━━━`,
+          `_Gunakan /t untuk mencatat transaksi baru._`
+        ].join('\n');
+
+        await sendBot(chatId, message);
+        return res.status(200).send('OK');
+      } catch (error) {
+        console.error("Cek Error:", error);
+        await sendBot(chatId, "❌ Gagal menarik ringkasan data.");
       }
     }
-
     // AKHIR DARI PROSES
     return res.status(200).send('OK');
 
