@@ -1,12 +1,8 @@
 import axios from 'axios';
 import { db } from '../../firebase';
-import { collection, addDoc, query, where, getDocs, serverTimestamp, setDoc, doc, limit } from 'firebase/firestore';
+import { collection, addDoc, query, where, getDocs, serverTimestamp, setDoc, doc, limit, deleteDoc } from 'firebase/firestore';
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
-import { 
-  collection, addDoc, query, where, getDocs, setDoc, doc, limit, 
-  deleteDoc // <--- Tambahkan deleteDoc di import firestore Anda
-} from 'firebase/firestore';
 
 // 2. AKTIFKAN PLUGIN
 dayjs.extend(customParseFormat);
