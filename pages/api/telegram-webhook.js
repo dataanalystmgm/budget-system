@@ -74,7 +74,7 @@ export default async function handler(req, res) {
           name: parts[0].trim(),
           type: parts[1].trim(),
           uid: DYNAMIC_UID,
-          createdAt: serverTimestamp()
+          createdAt: new Date().toISOString()
         });
         await sendBot(chatId, `✅ Kategori *${parts[0].trim()}* berhasil disimpan.`);
       } else {
