@@ -10,6 +10,9 @@ export default function AturBudget() {
   const [existingGroups, setExistingGroups] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // State tambahan untuk menangani tampilan format mata uang
+  const [displayAmount, setDisplayAmount] = useState('');
+
   useEffect(() => {
     // 1. Monitor status login user
     const unsubscribe = auth.onAuthStateChanged((user) => {
@@ -45,6 +48,21 @@ export default function AturBudget() {
     return () => unsubscribe();
   }, []);
 
+  // --- LOGIKA FORMATTER RIBUAN & RP ---
+  const handleAmountChange = (e) => {
+    const value = e.target.value.replace(/\D/g, ""); // Hanya ambil angka
+    
+    if (value) {
+      const formatted = new Intl.NumberFormat('id-ID').format(value);
+      setDisplayAmount(`Rp ${formatted}`);
+    } else {
+      setDisplayAmount('');
+    }
+
+    // Simpan angka bersih ke state budget
+    setBudget({ ...budget, amount: value });
+  };
+
   const handleSave = async (e) => {
     e.preventDefault();
     if (!budget.startDate || !budget.endDate) return Swal.fire('Oops', 'Lengkapi rentang tanggal!', 'warning');
@@ -68,6 +86,7 @@ export default function AturBudget() {
         setExistingGroups([...existingGroups, budget.groupName]);
       }
       setBudget({ groupName: '', category: '', amount: '', startDate: '', endDate: '' });
+      setDisplayAmount(''); // Reset tampilan nominal
     } catch (error) {
       Swal.fire('Error', 'Gagal mengaktifkan anggaran', 'error');
     }
@@ -113,8 +132,15 @@ export default function AturBudget() {
           </div>
           <div>
             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 mb-2 block">Target Limit (Rp)</label>
-            <input type="number" className="w-full p-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-teal-500 font-black text-slate-800 outline-none" 
-                   value={budget.amount} onChange={e => setBudget({...budget, amount: e.target.value})} required />
+            <input 
+              type="text" 
+              inputMode="numeric"
+              placeholder="Rp 0"
+              className="w-full p-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-teal-500 font-black text-slate-800 outline-none" 
+              value={displayAmount} 
+              onChange={handleAmountChange} 
+              required 
+            />
           </div>
         </div>
 

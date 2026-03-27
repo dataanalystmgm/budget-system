@@ -17,6 +17,9 @@ export default function Transaksi() {
   const [preview, setPreview] = useState(null);
   const [uploading, setUploading] = useState(false);
   
+  // State tambahan untuk menangani tampilan format mata uang
+  const [displayNominal, setDisplayNominal] = useState('');
+
   const [form, setForm] = useState({ 
     nominal: '', 
     kategori: '', 
@@ -30,7 +33,6 @@ export default function Transaksi() {
   useEffect(() => {
     const unsubscribeAuth = auth.onAuthStateChanged((user) => {
       if (user) {
-        // Hanya ambil kategori milik user yang login
         const qCats = query(
           collection(db, "categories"),
           where("uid", "==", user.uid),
@@ -52,6 +54,23 @@ export default function Transaksi() {
 
     return () => unsubscribeAuth();
   }, []);
+
+  // --- LOGIKA FORMATTER RIBUAN & RP ---
+  const handleNominalChange = (e) => {
+    // 1. Ambil hanya angka dari input
+    const value = e.target.value.replace(/\D/g, ""); 
+    
+    // 2. Format untuk tampilan (dengan titik dan Rp)
+    if (value) {
+      const formatted = new Intl.NumberFormat('id-ID').format(value);
+      setDisplayNominal(`Rp ${formatted}`);
+    } else {
+      setDisplayNominal('');
+    }
+
+    // 3. Simpan angka bersih ke state form untuk dikirim ke Firebase
+    setForm({ ...form, nominal: value });
+  };
 
   const handleImageChange = (e) => {
     const file = e.target.files[0];
@@ -120,13 +139,14 @@ export default function Transaksi() {
         imageUrl: driveUrl,
         uid: auth.currentUser.uid,
         userEmail: auth.currentUser.email,
-        createdAt: new Date().toISOString() // Format ISO dengan "Z" untuk sinkronisasi Bot
+        createdAt: new Date().toISOString()
       });
 
       Swal.fire({ icon: 'success', title: 'Tersimpan!', timer: 1500, showConfirmButton: false });
       
       // Reset Form
       setForm({ nominal: '', kategori: '', tipe: 'pengeluaran', keterangan: '' });
+      setDisplayNominal(''); // Reset tampilan nominal
       setImageFile(null);
       setPreview(null);
     } catch (err) {
@@ -206,14 +226,16 @@ export default function Transaksi() {
            </div>
         </div>
 
-        {/* Nominal */}
+        {/* Nominal dengan Auto Formatter */}
         <div>
           <label className="text-xs font-bold text-slate-400 mb-2 block tracking-widest uppercase">Nominal (RP)</label>
           <input 
-            type="number" 
+            type="text" 
+            inputMode="numeric"
+            placeholder="Rp 0"
             className="w-full p-4 bg-slate-50 rounded-2xl text-2xl font-black text-slate-800 border-none focus:ring-2 focus:ring-teal-500 outline-none" 
-            value={form.nominal} 
-            onChange={e => setForm({...form, nominal: e.target.value})} 
+            value={displayNominal} 
+            onChange={handleNominalChange} 
             required 
           />
         </div>

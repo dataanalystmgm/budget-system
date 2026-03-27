@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
-import { db, auth } from '../firebase'; // Tambahkan import auth
-import { collection, query, orderBy, onSnapshot, where } from 'firebase/firestore'; // Tambahkan where
+import { db, auth } from '../firebase';
+import { collection, query, orderBy, onSnapshot, where, deleteDoc, doc } from 'firebase/firestore'; 
 import { Wallet, ArrowUpCircle, ArrowDownCircle, Search, Trash2 } from 'lucide-react';
 import Swal from 'sweetalert2';
-import { deleteDoc, doc } from 'firebase/firestore';
 
 export default function DetailTransaksi() {
   const [transactions, setTransactions] = useState([]);
@@ -12,14 +11,11 @@ export default function DetailTransaksi() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // 1. Pantau status login user
     const unsubscribeAuth = auth.onAuthStateChanged((user) => {
       if (user) {
-        // 2. Query Transaksi: Hanya milik UID user ini
-        // Urutkan ASC (tua ke baru) untuk kalkulasi running balance yang akurat
         const q = query(
           collection(db, "transactions"), 
-          where("uid", "==", user.uid), // FILTER UID DI SINI
+          where("uid", "==", user.uid),
           orderBy("createdAt", "asc")
         );
         
@@ -31,20 +27,21 @@ export default function DetailTransaksi() {
           const data = snapshot.docs.map(doc => {
             const item = { id: doc.id, ...doc.data() };
             
+            // PROTEKSI NaN: Pastikan nominal adalah angka, jika tidak ada gunakan 0
+            const nominal = Number(item.nominal) || 0;
+
             // Kalkulasi saldo berjalan
             if (item.tipe === 'pemasukan') {
-              runningBalance += item.nominal;
-              inSum += item.nominal;
+              runningBalance += nominal;
+              inSum += nominal;
             } else {
-              runningBalance -= item.nominal;
-              outSum += item.nominal;
+              runningBalance -= nominal;
+              outSum += nominal;
             }
 
-            // Simpan saldo saat transaksi ini terjadi ke dalam objek
-            return { ...item, currentBalance: runningBalance };
+            return { ...item, nominal: nominal, currentBalance: runningBalance };
           });
 
-          // Balik urutan agar yang terbaru muncul di paling atas tabel
           setTransactions([...data].reverse());
           setTotals({ pemasukan: inSum, pengeluaran: outSum, saldo: runningBalance });
           setLoading(false);
@@ -95,7 +92,6 @@ export default function DetailTransaksi() {
     <div className="p-8 max-w-7xl mx-auto font-sans">
       <h2 className="text-2xl font-black text-slate-800 mb-8 tracking-tight">Detail Arus Kas</h2>
 
-      {/* Ringkasan Saldo di Atas */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
         <div className="bg-slate-900 p-6 rounded-[2rem] shadow-xl text-white border border-slate-700 relative overflow-hidden">
           <div className="relative z-10">
@@ -118,7 +114,6 @@ export default function DetailTransaksi() {
         </div>
       </div>
 
-      {/* Tabel Transaksi */}
       <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
         <div className="p-6 border-b border-slate-50 flex flex-col md:flex-row justify-between items-center gap-4">
           <h4 className="font-black text-slate-800 text-sm uppercase tracking-wider">Riwayat & Running Balance</h4>
@@ -153,9 +148,9 @@ export default function DetailTransaksi() {
                     </button>
                   </td>
                   <td className="p-4 text-[12px] font-bold text-slate-500 whitespace-nowrap">
-                    {new Date(t.createdAt).toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                    {t.createdAt ? new Date(t.createdAt).toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'}
                     <span className="block text-[10px] opacity-50">
-                        {new Date(t.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                        {t.createdAt ? new Date(t.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '-'}
                     </span>
                   </td>
                   <td className="p-4">
