@@ -80,7 +80,7 @@ export default function Sidebar({ isMinimized, setIsMinimized }) {
 
         {/* Header Logo */}
         <div className={`p-6 text-xl font-bold text-teal-400 border-b border-slate-800 overflow-hidden whitespace-nowrap ${isMinimized ? 'text-center' : ''}`}>
-          {isMinimized ? 'M' : 'MGM Finance'}
+          {isMinimized ? 'M' : 'My Finance'}
         </div>
 
         {/* Profil Singkat */}

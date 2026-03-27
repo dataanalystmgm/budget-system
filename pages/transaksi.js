@@ -1,6 +1,13 @@
 import { useState, useEffect } from 'react';
 import { db, auth } from '../firebase';
-import { collection, addDoc, getDocs, query, orderBy, where } from 'firebase/firestore'; // Tambahkan where
+import { 
+  collection, 
+  addDoc, 
+  query, 
+  orderBy, 
+  where, 
+  onSnapshot 
+} from 'firebase/firestore'; 
 import Swal from 'sweetalert2';
 import { Save, Camera, Image as ImageIcon, X, Loader2 } from 'lucide-react';
 
@@ -11,18 +18,39 @@ export default function Transaksi() {
   const [uploading, setUploading] = useState(false);
   
   const [form, setForm] = useState({ 
-    nominal: '', kategori: '', tipe: 'pengeluaran', keterangan: '' 
+    nominal: '', 
+    kategori: '', 
+    tipe: 'pengeluaran', 
+    keterangan: '' 
   });
 
   const GAS_URL = "https://script.google.com/macros/s/AKfycbwYr8gQ5PcoytLymSzKbJRmeSn3ttkn-LtJf0FDt8NcRfZMfmf2GSMD3ifpOqCo5GmI/exec";
 
+  // --- LOGIKA FILTER KATEGORI BERDASARKAN USER LOGIN ---
   useEffect(() => {
-    const getCats = async () => {
-      // Mengambil kategori (bisa global atau per user jika Anda ingin kategori custom nantinya)
-      const snap = await getDocs(query(collection(db, "categories"), orderBy("name", "asc")));
-      setAllCategories(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    };
-    getCats();
+    const unsubscribeAuth = auth.onAuthStateChanged((user) => {
+      if (user) {
+        // Hanya ambil kategori milik user yang login
+        const qCats = query(
+          collection(db, "categories"),
+          where("uid", "==", user.uid),
+          orderBy("name", "asc")
+        );
+
+        const unsubSnapshot = onSnapshot(qCats, (snap) => {
+          setAllCategories(snap.docs.map(doc => ({ 
+            id: doc.id, 
+            ...doc.data() 
+          })));
+        });
+
+        return () => unsubSnapshot();
+      } else {
+        setAllCategories([]);
+      }
+    });
+
+    return () => unsubscribeAuth();
   }, []);
 
   const handleImageChange = (e) => {
@@ -46,18 +74,22 @@ export default function Transaksi() {
     e.preventDefault();
     if (!form.kategori) return Swal.fire('Oops', 'Pilih kategori!', 'warning');
     
-    // Pastikan user sedang login
     if (!auth.currentUser) {
         return Swal.fire('Error', 'Sesi login berakhir. Silakan login kembali.', 'error');
     }
 
     setUploading(true);
-    Swal.fire({ title: 'Mengunggah ke Drive...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    Swal.fire({ 
+      title: 'Mengunggah Data...', 
+      text: 'Mohon tunggu sebentar',
+      allowOutsideClick: false, 
+      didOpen: () => Swal.showLoading() 
+    });
 
     try {
       let driveUrl = "";
 
-      // 1. Upload ke Google Drive via GAS
+      // 1. Upload ke Google Drive via GAS jika ada file
       if (imageFile) {
         const base64Data = await convertToBase64(imageFile);
         const payload = {
@@ -79,19 +111,21 @@ export default function Transaksi() {
         }
       }
 
-      // 2. Simpan Data ke Firestore (DENGAN TAMBAHAN UID)
+      // 2. Simpan Data ke Firestore
       await addDoc(collection(db, "transactions"), {
-        ...form,
         nominal: Number(form.nominal),
+        keterangan: form.keterangan,
+        kategori: form.kategori,
+        tipe: form.tipe,
         imageUrl: driveUrl,
-        uid: auth.currentUser.uid, // <--- TAMBAHAN KRUSIAL: Menyimpan ID unik user
+        uid: auth.currentUser.uid,
         userEmail: auth.currentUser.email,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString() // Format ISO dengan "Z" untuk sinkronisasi Bot
       });
 
       Swal.fire({ icon: 'success', title: 'Tersimpan!', timer: 1500, showConfirmButton: false });
       
-      // Reset
+      // Reset Form
       setForm({ nominal: '', kategori: '', tipe: 'pengeluaran', keterangan: '' });
       setImageFile(null);
       setPreview(null);
@@ -112,7 +146,9 @@ export default function Transaksi() {
       <form onSubmit={handleSimpan} className="space-y-6">
         {/* Foto Box */}
         <div className="space-y-3">
-          <label className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] block">Bukti Fisik (Drive)</label>
+          <label className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] block">
+            Bukti Fisik (Google Drive)
+          </label>
           {!preview ? (
             <div className="grid grid-cols-2 gap-4">
               <label className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-slate-200 rounded-3xl hover:bg-slate-50 cursor-pointer group transition-all">
@@ -129,43 +165,82 @@ export default function Transaksi() {
           ) : (
             <div className="relative rounded-3xl overflow-hidden border-4 border-slate-100 shadow-lg">
               <img src={preview} alt="Preview" className="w-full h-56 object-cover" />
-              <button type="button" onClick={() => {setPreview(null); setImageFile(null);}} className="absolute top-3 right-3 bg-red-500 text-white p-2 rounded-full shadow-xl hover:scale-110 transition">
+              <button 
+                type="button" 
+                onClick={() => {setPreview(null); setImageFile(null);}} 
+                className="absolute top-3 right-3 bg-red-500 text-white p-2 rounded-full shadow-xl hover:scale-110 transition"
+              >
                 <X size={18} />
               </button>
             </div>
           )}
         </div>
 
-        {/* Form Fields (Kategori & Nominal) */}
+        {/* Tipe & Kategori */}
         <div className="grid grid-cols-2 gap-4">
            <div>
              <label className="text-xs font-bold text-slate-400 mb-2 block tracking-widest uppercase">Tipe</label>
-             <select className="w-full p-3 bg-slate-50 rounded-xl font-bold border-none outline-none focus:ring-2 focus:ring-teal-500" value={form.tipe} onChange={e => setForm({...form, tipe: e.target.value})}>
+             <select 
+               className="w-full p-3 bg-slate-50 rounded-xl font-bold border-none outline-none focus:ring-2 focus:ring-teal-500" 
+               value={form.tipe} 
+               onChange={e => setForm({...form, tipe: e.target.value, kategori: ''})}
+             >
                <option value="pengeluaran">Keluar (-)</option>
                <option value="pemasukan">Masuk (+)</option>
              </select>
            </div>
            <div>
              <label className="text-xs font-bold text-slate-400 mb-2 block tracking-widest uppercase">Kategori</label>
-             <select className="w-full p-3 bg-slate-50 rounded-xl font-bold border-none outline-none focus:ring-2 focus:ring-teal-500" value={form.kategori} onChange={e => setForm({...form, kategori: e.target.value})} required>
+             <select 
+               className="w-full p-3 bg-slate-50 rounded-xl font-bold border-none outline-none focus:ring-2 focus:ring-teal-500" 
+               value={form.kategori} 
+               onChange={e => setForm({...form, kategori: e.target.value})} 
+               required
+             >
                <option value="">Pilih</option>
-               {allCategories.filter(c => c.tipe === form.tipe).map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+               {allCategories
+                 .filter(c => c.tipe === form.tipe)
+                 .map(c => <option key={c.id} value={c.name}>{c.name}</option>)
+               }
              </select>
            </div>
         </div>
 
+        {/* Nominal */}
         <div>
           <label className="text-xs font-bold text-slate-400 mb-2 block tracking-widest uppercase">Nominal (RP)</label>
-          <input type="number" className="w-full p-4 bg-slate-50 rounded-2xl text-2xl font-black text-slate-800 border-none focus:ring-2 focus:ring-teal-500 outline-none" value={form.nominal} onChange={e => setForm({...form, nominal: e.target.value})} required />
+          <input 
+            type="number" 
+            className="w-full p-4 bg-slate-50 rounded-2xl text-2xl font-black text-slate-800 border-none focus:ring-2 focus:ring-teal-500 outline-none" 
+            value={form.nominal} 
+            onChange={e => setForm({...form, nominal: e.target.value})} 
+            required 
+          />
         </div>
 
+        {/* Keterangan */}
         <div>
           <label className="text-xs font-bold text-slate-400 mb-2 block tracking-widest uppercase">Keterangan (Opsional)</label>
-          <input type="text" className="w-full p-4 bg-slate-50 rounded-2xl font-bold text-slate-800 border-none focus:ring-2 focus:ring-teal-500 outline-none" placeholder="Contoh: Makan Siang di Kantin" value={form.keterangan} onChange={e => setForm({...form, keterangan: e.target.value})} />
+          <input 
+            type="text" 
+            className="w-full p-4 bg-slate-50 rounded-2xl font-bold text-slate-800 border-none focus:ring-2 focus:ring-teal-500 outline-none" 
+            placeholder="Contoh: Makan Siang di Kantin" 
+            value={form.keterangan} 
+            onChange={e => setForm({...form, keterangan: e.target.value})} 
+          />
         </div>
 
-        <button type="submit" disabled={uploading} className={`w-full py-4 ${uploading ? 'bg-slate-400' : 'bg-slate-900 hover:bg-teal-600'} text-white rounded-2xl font-black transition flex items-center justify-center gap-3 shadow-xl`}>
-          {uploading ? <><Loader2 className="animate-spin" /> Sedang Mengunggah...</> : 'Simpan Transaksi'}
+        {/* Submit Button */}
+        <button 
+          type="submit" 
+          disabled={uploading} 
+          className={`w-full py-4 ${uploading ? 'bg-slate-400 cursor-not-allowed' : 'bg-slate-900 hover:bg-teal-600'} text-white rounded-2xl font-black transition flex items-center justify-center gap-3 shadow-xl`}
+        >
+          {uploading ? (
+            <><Loader2 className="animate-spin" /> Sedang Mengunggah...</>
+          ) : (
+            'Simpan Transaksi'
+          )}
         </button>
       </form>
     </div>

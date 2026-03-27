@@ -15,8 +15,14 @@ export default function AturBudget() {
     const unsubscribe = auth.onAuthStateChanged((user) => {
       if (user) {
         const fetchInitial = async () => {
-          // Ambil kategori global (atau bisa difilter per tipe pengeluaran)
-          const catSnap = await getDocs(query(collection(db, "categories"), orderBy("name", "asc")));
+          // --- PERBAIKAN: Ambil kategori HANYA milik user yang login ---
+          const qCats = query(
+            collection(db, "categories"), 
+            where("uid", "==", user.uid), // Filter berdasarkan UID
+            orderBy("name", "asc")
+          );
+          
+          const catSnap = await getDocs(qCats);
           setCategories(catSnap.docs.map(d => d.data().name));
           
           // 2. Ambil grup budget yang HANYA milik user ini untuk datalist
